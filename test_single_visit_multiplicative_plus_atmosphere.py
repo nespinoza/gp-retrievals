@@ -42,7 +42,7 @@ planet_properties['T_eq'] = 255
 bulk_species = ['H2']
 param_species = ['O2', 'CO2', 'CH4', 'H2O', 'O3', 'N2O']
 true_T = 250.
-true_CO2 = 0.1
+true_CO2 = 0.2
 # But! Has 30% CO2, 10% CH4 ahd 10% H2O:
 #
 #                                 O2  CO2  CH4  H2O  O3   N2O
@@ -50,13 +50,14 @@ true_log_X = np.log10( np.array([0.0, true_CO2, 0.0, 0.0, 0.0, 0.0]) )
 # And, of course, has clouds:
 #
 # 
-true_a, true_Pcloud = 1., 1e-3
+true_a, true_Pcloud = 1., 0.1
 log_a, gamma, log_P_cloud = np.log10(true_a), -4., np.log10(true_Pcloud)
 # Add a small depth offset in ppm:
 true_offset = 400.
 
 # Generate planet:
 planet = utils.generate_atmosphere(star_properties, planet_properties, param_species, bulk_species, R = 500)
+
 
 wavelengths_model = planet.wl
 
@@ -68,7 +69,7 @@ true_spectrum = gaussian_filter(true_offset + planet.get_spectrum() * 1e6, 5)
 
 # Generate noise samples and wavelengths:
 true_rho = 0.5
-true_gp_sigma = 0.01
+true_gp_sigma = 0.05
 true_noise = 300.
 true_factor = 0.5
 
@@ -278,7 +279,7 @@ plt.plot(wavelengths1, binned_contaminated_true_spectrum, color = 'red', lw = 2,
 plt.plot(wavelengths1, real_y, '.', color = 'black', label = 'Data', zorder = 4, ms = 5)
 
 indexes = np.arange(posterior_samples.shape[0])
-idx = np.random.choice(indexes, 1000, replace = False)
+idx = np.random.choice(indexes, 2000, replace = False)
 
 if not os.path.exists(out_name+'_full_posterior_spectrum.npy'):
 

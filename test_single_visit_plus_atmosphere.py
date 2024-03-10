@@ -3,6 +3,8 @@ import numpy as np
 rstate= np.random.default_rng(56101)
 import matplotlib.pyplot as plt
 import seaborn as sns
+import time
+from scipy.ndimage import gaussian_filter
 
 # Import dynesty:
 import dynesty
@@ -12,21 +14,61 @@ from dynesty.utils import resample_equal
 import celerite2
 from celerite2 import terms
 
+# Import utility functions:
+import utils
+
 # Generate noise samples and wavelengths:
-true_mean = 7000.
+true_mean = 500.
 true_rho = 0.5
 true_gp_sigma = 0.05
 true_noise = 200.
 true_factor = 0.5
 
+# Set input atmospheric model:
+star_properties = {}
+
+star_properties['R'] =  0.11697 # Rsun
+star_properties['Teff'] = 2559.0
+star_properties['FeH'] = 0.04
+star_properties['logg'] = 5.21
+
+planet_properties = {}
+
+planet_properties['R'] = 0.917985 # Rearth
+planet_properties['M'] = 0.6356
+planet_properties['T_eq'] = 255 
+
+bulk_species = ['H2'] # Hydrogen dominated!
+param_species = ['O2', 'CO2', 'CH4', 'H2O', 'O3', 'N2O']
+X = np.array([0.21, 3.60E-02, 2.378E-05, 0.01355, 3.901E-09, 3.741E-07])
+a, Pcloud = 1., 1e6 
+log_a, gamma, log_P_cloud = np.log10(a), -4., np.log10(Pcloud)
+
+# Generate model
+planet = utils.generate_atmosphere(star_properties, planet_properties, param_species, bulk_species, R = 1000)
+planet.set_parameters(250., np.log10(X), [log_a, gamma, log_P_cloud])
+tic = time.time()
+spectrum = planet.get_spectrum()
+toc = time.time()
+print('Took to generate spectra:',toc-tic)
+
+tic = time.time()
+gf_spectrum = gaussian_filter(spectrum*1e6, 5)
+toc = time.time()
+print('Took to GF spectra:',toc-tic)
+
+plt.plot(planet.wl, spectrum*1e6, '-')
+plt.plot(planet.wl, gf_spectrum, '-')
+plt.show()
+
 # Define priors (assumed uniform):
 a_mean, b_mean = 0., 20000.
-a_rho, b_rho = 0.0, 100.
-a_gp_sigma, b_gp_sigma = 0.0,10. 
-a_sigma_w, b_sigma_w = 0.0, 1000
+a_rho, b_rho = 0.0, 10.
+a_gp_sigma, b_gp_sigma = 0.0, 10000.
+a_sigma_w, b_sigma_w = 0., 1000
 
 # Simulate some wavelengths, noise and errorbars (underestimated):
-wavelengths = np.linspace(0.6, 5.0, 100)
+wavelengths = planet.wl#np.linspace(0.6, 5.0, 100)
 noise = np.random.normal(0., true_noise, len(wavelengths))
 yerr = np.ones(len(wavelengths)) * true_noise * true_factor # errorbars are smaller than they should
 
@@ -35,55 +77,38 @@ kernel = terms.Matern32Term(sigma = true_gp_sigma,
                             rho = true_rho, 
                             eps=0.01)
 
-true_gp = celerite2.GaussianProcess(kernel, mean = 1.0)
-true_gp.compute(wavelengths, yerr = 0.)#yerr + 50.)
+gp = celerite2.GaussianProcess(kernel, mean = 0.0)
+gp.compute(wavelengths, yerr = 0.)#yerr + 50.)
 
 # Sample from the (noiseless) GP:
-model = true_gp.sample()
-
-gp = celerite2.GaussianProcess(kernel, mean = 0.0)
-gp.compute(wavelengths, yerr = 0.)
-
-plt.subplot(211)
-plt.title('Original')
-plt.plot(wavelengths, true_mean*model)
-#plt.plot(wavelengths, true_mean*model + noise, '.')
-plt.errorbar(wavelengths, true_mean*model + noise, yerr ,fmt = '.')
+model = 1. + gp.sample()
 
 # Plot:
-plt.subplot(212)
-plt.title('Log-version:')
-plt.plot(wavelengths, np.log(true_mean*model))
-plt.errorbar(wavelengths, np.log(true_mean*model + noise), yerr / (true_mean*model + noise), fmt = '.')
-#plt.plot(wavelengths, np.log(true_mean*model + noise), '.')
+plt.plot(wavelengths, true_mean + gf_spectrum, 'g-')
+plt.plot(wavelengths, true_mean + gf_spectrum * model, 'r-')
+plt.plot(wavelengths, true_mean + gf_spectrum * model + noise, '.')
 plt.show()
 
-plt.plot(wavelengths, np.log(true_mean*model + noise) - np.log(true_mean), label = 'log-data - log(true mean)')
-plt.plot(wavelengths, np.log(model), label = 'log-GP')
-plt.legend()
-plt.show()
-
+sys.exit()
 # All right, let's do some inference! First, set the data:
-real_y = true_mean*model + noise
-logy = np.log( real_y )
-logy_err = yerr / real_y
+y = true_mean + model + noise
 
 # Define the prior and the log-likelihood a-la-dynesty:
 def loglike(theta):
 
     mean, rho, gp_sigma, sigma_w = theta
-    total_variance = ( logy_err**2 + (sigma_w / real_y)**2 )
+    total_yerr = np.sqrt( yerr**2 + sigma_w**2 )
     
     # Subtract model from data:
-    residuals = logy - np.log(mean)
+    residuals = y - mean
 
     # Update GP hyperparmeters. First, re-set kernel:
     gp.kernel = terms.Matern32Term(sigma = gp_sigma,
                                    rho = rho,
-                                   eps=1e-6)
+                                   eps=0.01)
 
     # Compute:
-    gp.compute(wavelengths, diag=total_variance, quiet=True)
+    gp.compute(wavelengths, diag=yerr**2 + sigma_w**2, quiet=True)
 
     # Return log-likelihood if compliant with priors:
     if (mean > a_mean and mean < b_mean) and (rho > a_rho and rho < b_rho) and \
@@ -113,12 +138,6 @@ def transform_uniform(x, hyperparameters):
     a, b = hyperparameters
     return a + (b-a)*x 
 
-def transform_loguniform(x, hyperparameters):
-    a, b = hyperparameters
-    la = np.log(a)
-    lb = np.log(b)
-    return np.exp(la + x * (lb - la))
-
 # Run dynesty:
 dsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim=4,
                                         bound='multi', sample='rwalk', rstate=rstate)
@@ -145,11 +164,10 @@ plt.show()
 
 weights = np.exp(results['logwt'] - results['logz'][-1])
 posterior_samples = resample_equal(results.samples, weights)
+print(posterior_samples.shape)
 
-print(Computing posterior model plot...)
-
-plt.plot(wavelengths, true_mean*model, color = 'orangered', label = 'True model', zorder = 3)
-plt.plot(wavelengths, real_y, '.', color = 'black', label = 'Data', zorder = 4, ms = 5)
+plt.plot(wavelengths, true_mean + model, color = 'orangered', label = 'True model', zorder = 3)
+plt.plot(wavelengths, y, '.', color = 'black', label = 'Data', zorder = 4, ms = 5)
 
 indexes = np.arange(posterior_samples.shape[0])
 idx = np.random.choice(indexes, 1000, replace = False)
@@ -158,11 +176,8 @@ for sample in posterior_samples[idx,:]:
 
     mean, rho, gp_sigma, sigma_w = sample
 
-    # Get residuals:
-    total_variance = ( logy_err**2 + (sigma_w / real_y)**2 )
-       
     # Subtract model from data:
-    residuals = logy - np.log(mean)
+    residuals = y - mean
 
     # Update GP hyperparmeters. First, re-set kernel:
     gp.kernel = terms.Matern32Term(sigma = gp_sigma,
@@ -170,9 +185,9 @@ for sample in posterior_samples[idx,:]:
                                    eps=0.01)
 
     # Compute:
-    gp.compute(wavelengths, diag=total_variance, quiet=True)   
+    gp.compute(wavelengths, diag=yerr**2 + sigma_w**2, quiet=True)   
     conditional = gp.condition(residuals, wavelengths)
-    plt.plot(wavelengths, np.exp(conditional.sample()) * mean, color = 'cornflowerblue', alpha = 0.05, zorder = 1) 
+    plt.plot(wavelengths, conditional.sample() + mean, color = 'cornflowerblue', alpha = 0.05, zorder = 1) 
 
 plt.xlim(np.min(wavelengths), np.max(wavelengths))
 plt.legend()

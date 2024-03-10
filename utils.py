@@ -2,6 +2,27 @@ import numpy as np
 from POSEIDON.core import create_star, create_planet, define_model, make_atmosphere, read_opacities, wl_grid_constant_R, compute_spectrum
 from POSEIDON.constants import R_Sun, R_E, M_E 
 
+def bin_to_data(w_data, w_model, d_model):
+
+    d_data = np.zeros(len(w_data))
+
+    # Assume data is argsorted:
+    for i in range(len(w_data)):
+
+        if i == 0.:
+
+            delta_w = w_data[1] - w_data[0]
+
+        else:
+
+            delta_w = w_data[i] - w_data[i-1]
+
+        idx = np.where(np.abs(w_data[i]-w_model) <= delta_w)[0]
+
+        d_data[i] = np.mean( d_model[idx] )
+
+    return d_data
+
 class generate_atmosphere:
 
     def set_parameters(self, T, log_X, cloud_parameters):
@@ -23,7 +44,7 @@ class generate_atmosphere:
 
     def __init__(self, star_properties, planet_properties, param_species, bulk_species, 
                  PT_profile = 'isotherm', cloud_model = 'MacMad17', cloud_type = 'deck_haze', cloud_dim = 1, 
-                 P_min = 1e-7, P_max = 10, N_layers = 100, P_surf = 1.0, wl_min = 0.5, wl_max = 5.2, R = 10000,     
+                 P_min = 1e-7, P_max = 10, N_layers = 100, P_surf = 1.0, wl_min = 0.5, wl_max = 5.7, R = 10000,     
                  planet_name = 'myplanet', model_name = 'mymodel'):
 
         # Load stellar properties:
