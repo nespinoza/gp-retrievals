@@ -10,6 +10,7 @@ from scipy.ndimage import gaussian_filter
 
 # Import dynesty:
 import dynesty
+import dynesty.pool as dypool
 from dynesty.utils import resample_equal
 
 # Import celerite2:
