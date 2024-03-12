@@ -13,23 +13,62 @@ import dynesty
 import dynesty.pool as dypool
 from dynesty.utils import resample_equal
 
+# Import george
+import george
+
 # Import celerite2:
 import celerite2
 from celerite2 import terms
 
+import transitspectroscopy as ts
 # Utilities function:
 import utils
 
+kernel_name = 'georgeMatern32'
 show_plots = True
 multiprocessing = False
 nthreads = 30
+
+binning = True
+R = 50
+
 # First things first, get data out; use it to steal the wavelengths:
 wavelengths1, depths1, depths_error1 = np.loadtxt('data/espinoza/visit1.txt', unpack = True, usecols = (0, 1, 2))
 wavelengths2, depths2, depths_error2 = np.loadtxt('data/espinoza/visit2.txt', unpack = True, usecols = (0, 1, 2))
 wavelengths3, depths3, depths_error3 = np.loadtxt('data/espinoza/visit3.txt', unpack = True, usecols = (0, 1, 2))
 wavelengths4, depths4, depths_error4 = np.loadtxt('data/espinoza/visit4.txt', unpack = True, usecols = (0, 1, 2))
 
-out_name = 'data_multi_visit_gp_atmosphere'
+if not binning:
+
+    out_name = 'data_multi_visit_gp_atmosphere'
+
+else:
+
+    out_name = 'data_multi_visit_gp_atmosphere_binnedR'+str(R)
+
+    wavelengths1, depths1, depths_error1 = ts.utils.bin_at_resolution(wavelengths1, 
+                                                                      depths1,
+                                                                      depths_errors = depths_error1,
+                                                                      R = R)
+
+    wavelengths2, depths2, depths_error2 = ts.utils.bin_at_resolution(wavelengths2, 
+                                                                      depths2,
+                                                                      depths_errors = depths_error2,
+                                                                      R = R)
+
+    wavelengths3, depths3, depths_error3 = ts.utils.bin_at_resolution(wavelengths3, 
+                                                                      depths3,
+                                                                      depths_errors = depths_error3,
+                                                                      R = R)
+
+    wavelengths4, depths4, depths_error4 = ts.utils.bin_at_resolution(wavelengths4, 
+                                                                      depths4,
+                                                                      depths_errors = depths_error4,
+                                                                      R = R)
+
+if 'george' in kernel_name:
+
+    out_name = out_name+'_george'
 
 # Define star/planet atmospheric properties:
 star_properties = {}
@@ -73,20 +112,39 @@ a_gp_sigma, b_gp_sigma = 0.0,10.
 a_sigma_w, b_sigma_w = 0.0, 1000
 
 # Initialize GP sample from celerite2; initialize GP objects for each dataset:
-kernel = terms.Matern32Term(sigma = 1.0, 
-                            rho = 0.1, 
-                            eps=0.01)
 
-gp1 = celerite2.GaussianProcess(kernel, mean = 0.0)
+if kernel_name == 'celeriteMatern32':
+
+    kernel = terms.Matern32Term(sigma = 1.0,
+                                rho = 0.1,
+                                eps=0.01)
+
+    gp1 = celerite2.GaussianProcess(kernel, mean = 0.0)
+    gp2 = celerite2.GaussianProcess(kernel, mean = 0.0)
+    gp3 = celerite2.GaussianProcess(kernel, mean = 0.0)
+    gp4 = celerite2.GaussianProcess(kernel, mean = 0.0)
+
+elif kernel_name == 'georgeMatern32':
+
+    kernel = 1. * george.kernels.Matern32Kernel(0.1)
+
+    jitter_term = george.modeling.ConstantModel(1.)
+
+    gp1 = george.GP(kernel, mean=0.0, fit_mean = False,
+                    white_noise = jitter_term, fit_white_noise = True)
+
+    gp2 = george.GP(kernel, mean=0.0, fit_mean = False,
+                    white_noise = jitter_term, fit_white_noise = True)
+
+    gp3 = george.GP(kernel, mean=0.0, fit_mean = False,
+                    white_noise = jitter_term, fit_white_noise = True)
+
+    gp4 = george.GP(kernel, mean=0.0, fit_mean = False,
+                    white_noise = jitter_term, fit_white_noise = True)
+
 gp1.compute(wavelengths1, yerr = 0.)
-
-gp2 = celerite2.GaussianProcess(kernel, mean = 0.0)
 gp2.compute(wavelengths2, yerr = 0.) 
-
-gp3 = celerite2.GaussianProcess(kernel, mean = 0.0)
 gp3.compute(wavelengths3, yerr = 0.) 
-
-gp4 = celerite2.GaussianProcess(kernel, mean = 0.0)
 gp4.compute(wavelengths4, yerr = 0.) 
 
 if show_plots:
@@ -161,27 +219,58 @@ def loglike(theta):
     residuals4 = logy4 - np.log(binned_spectrum4)
 
     # Update GP hyperparmeters. First, re-set kernel:
-    gp1.kernel = terms.Matern32Term(sigma = gp_sigma1,
-                                   rho = rho1,
-                                   eps=1e-6)
+    if kernel_name == 'celeriteMatern32':
 
-    gp2.kernel = terms.Matern32Term(sigma = gp_sigma2,
-                                   rho = rho2,
-                                   eps=1e-6)
+        # Update GP hyperparmeters. First, re-set kernel:
+        gp1.kernel = terms.Matern32Term(sigma = gp_sigma1,
+                                       rho = rho1,
+                                       eps=1e-6)
 
-    gp3.kernel = terms.Matern32Term(sigma = gp_sigma3,
-                                   rho = rho3,
-                                   eps=1e-6)
+        gp2.kernel = terms.Matern32Term(sigma = gp_sigma2,
+                                       rho = rho2,
+                                       eps=1e-6)
 
-    gp4.kernel = terms.Matern32Term(sigma = gp_sigma4,
-                                   rho = rho4,
-                                   eps=1e-6)
+        gp3.kernel = terms.Matern32Term(sigma = gp_sigma3,
+                                       rho = rho3,
+                                       eps=1e-6)
 
-    # Compute:
-    gp1.compute(wavelengths1, diag=total_variance1, quiet=True)
-    gp2.compute(wavelengths2, diag=total_variance2, quiet=True)
-    gp3.compute(wavelengths3, diag=total_variance3, quiet=True)
-    gp4.compute(wavelengths4, diag=total_variance4, quiet=True)
+        gp4.kernel = terms.Matern32Term(sigma = gp_sigma4,
+                                       rho = rho4,
+                                       eps=1e-6)
+
+        # Compute:
+        gp1.compute(wavelengths1, diag=total_variance1, quiet=True)
+        gp2.compute(wavelengths2, diag=total_variance2, quiet=True)
+        gp3.compute(wavelengths3, diag=total_variance3, quiet=True)
+        gp4.compute(wavelengths4, diag=total_variance4, quiet=True)
+
+    elif kernel_name == 'georgeMatern32':
+
+        # Update GP hyperparmeters. First, update parameter vectors:
+        gp1.set_parameter_vector([ np.log( sigma_w1**2 ),
+                                   np.log( gp_sigma1**2 ),
+                                   np.log( 1. / rho1 )])
+
+        # Update GP hyperparmeters. First, update parameter vectors:
+        gp2.set_parameter_vector([ np.log( sigma_w2**2 ),
+                                   np.log( gp_sigma2**2 ),
+                                   np.log( 1. / rho2 )])
+
+        # Update GP hyperparmeters. First, update parameter vectors:
+        gp3.set_parameter_vector([ np.log( sigma_w3**2 ),
+                                   np.log( gp_sigma3**2 ),
+                                   np.log( 1. / rho3 )])
+
+        # Update GP hyperparmeters. First, update parameter vectors:
+        gp4.set_parameter_vector([ np.log( sigma_w4**2 ),
+                                   np.log( gp_sigma4**2 ),
+                                   np.log( 1. / rho4 )])
+
+        # Compute:
+        gp1.compute(wavelengths1, yerr=np.sqrt(total_variance1))
+        gp2.compute(wavelengths2, yerr=np.sqrt(total_variance2))
+        gp3.compute(wavelengths3, yerr=np.sqrt(total_variance3))
+        gp4.compute(wavelengths4, yerr=np.sqrt(total_variance4))
 
     #print('In loglike:', theta)
     #print('Residuals:', residuals)
@@ -362,46 +451,84 @@ if not os.path.exists(out_name+'_full_posterior_spectrum4.npy'):
         residuals4 = logy4 - np.log(binned_spectrum4)
 
         # Update GP hyperparmeters. First, re-set kernel:
-        gp1.kernel = terms.Matern32Term(sigma = gp_sigma1,
-                                       rho = rho1,
-                                       eps=1e-6)
+        if kernel_name == 'celeriteMatern32':
 
-        gp2.kernel = terms.Matern32Term(sigma = gp_sigma2,
-                                       rho = rho2,
-                                       eps=1e-6)
+            # Update GP hyperparmeters. First, re-set kernel:
+            gp1.kernel = terms.Matern32Term(sigma = gp_sigma1,
+                                           rho = rho1,
+                                           eps=1e-6)
 
-        gp3.kernel = terms.Matern32Term(sigma = gp_sigma3,
-                                       rho = rho3,
-                                       eps=1e-6)
+            gp2.kernel = terms.Matern32Term(sigma = gp_sigma2,
+                                           rho = rho2,
+                                           eps=1e-6)
 
-        gp4.kernel = terms.Matern32Term(sigma = gp_sigma4,
-                                       rho = rho4,
-                                       eps=1e-6)
+            gp3.kernel = terms.Matern32Term(sigma = gp_sigma3,
+                                           rho = rho3,
+                                           eps=1e-6)
 
-        # Compute:
-        gp1.compute(wavelengths1, diag=total_variance1, quiet=True)
-        gp2.compute(wavelengths2, diag=total_variance2, quiet=True)
-        gp3.compute(wavelengths3, diag=total_variance3, quiet=True)
-        gp4.compute(wavelengths4, diag=total_variance4, quiet=True)
+            gp4.kernel = terms.Matern32Term(sigma = gp_sigma4,
+                                           rho = rho4,
+                                           eps=1e-6)
 
-        conditional1 = gp1.condition(residuals1, wavelengths1)
-        conditional2 = gp2.condition(residuals2, wavelengths2)
-        conditional3 = gp3.condition(residuals3, wavelengths3)
-        conditional4 = gp4.condition(residuals4, wavelengths4)
+            # Compute:
+            gp1.compute(wavelengths1, diag=total_variance1, quiet=True)
+            gp2.compute(wavelengths2, diag=total_variance2, quiet=True)
+            gp3.compute(wavelengths3, diag=total_variance3, quiet=True)
+            gp4.compute(wavelengths4, diag=total_variance4, quiet=True)
 
-        contamination_posteriors1[counter, :] = np.exp(conditional1.sample())
+            # Get conditionals:
+            conditional1 = gp1.condition(residuals1, wavelengths1).sample()
+            conditional2 = gp2.condition(residuals2, wavelengths2).sample()
+            conditional3 = gp3.condition(residuals3, wavelengths3).sample()
+            conditional4 = gp4.condition(residuals4, wavelengths4).sample()
+
+        elif kernel_name == 'georgeMatern32':
+
+            # Update GP hyperparmeters. First, update parameter vectors:
+            gp1.set_parameter_vector([ np.log( sigma_w1**2 ),
+                                       np.log( gp_sigma1**2 ),
+                                       np.log( 1. / rho1 )])
+
+            # Update GP hyperparmeters. First, update parameter vectors:
+            gp2.set_parameter_vector([ np.log( sigma_w2**2 ),
+                                       np.log( gp_sigma2**2 ),
+                                       np.log( 1. / rho2 )])
+
+            # Update GP hyperparmeters. First, update parameter vectors:
+            gp3.set_parameter_vector([ np.log( sigma_w3**2 ),
+                                       np.log( gp_sigma3**2 ),
+                                       np.log( 1. / rho3 )])
+
+            # Update GP hyperparmeters. First, update parameter vectors:
+            gp4.set_parameter_vector([ np.log( sigma_w4**2 ),
+                                       np.log( gp_sigma4**2 ),
+                                       np.log( 1. / rho4 )])
+
+            # Compute:
+            gp1.compute(wavelengths1, yerr=np.sqrt(total_variance1))
+            gp2.compute(wavelengths2, yerr=np.sqrt(total_variance2))
+            gp3.compute(wavelengths3, yerr=np.sqrt(total_variance3))
+            gp4.compute(wavelengths4, yerr=np.sqrt(total_variance4))
+
+            # Compute conditionals:
+            conditional1 = gp1.sample_conditional(residuals1, wavelengths1)
+            conditional2 = gp2.sample_conditional(residuals2, wavelengths2)
+            conditional3 = gp3.sample_conditional(residuals3, wavelengths3)
+            conditional4 = gp4.sample_conditional(residuals4, wavelengths4)
+
+        contamination_posteriors1[counter, :] = np.exp(conditional1)
         binned_spectrum_posteriors1[counter, :] = binned_spectrum1
         full_spectrum_posteriors1[counter, :] = spectrum1
 
-        contamination_posteriors2[counter, :] = np.exp(conditional2.sample())
+        contamination_posteriors2[counter, :] = np.exp(conditional2)
         binned_spectrum_posteriors2[counter, :] = binned_spectrum2
         full_spectrum_posteriors2[counter, :] = spectrum2
 
-        contamination_posteriors3[counter, :] = np.exp(conditional3.sample())
+        contamination_posteriors3[counter, :] = np.exp(conditional3)
         binned_spectrum_posteriors3[counter, :] = binned_spectrum3
         full_spectrum_posteriors3[counter, :] = spectrum3
 
-        contamination_posteriors4[counter, :] = np.exp(conditional4.sample())
+        contamination_posteriors4[counter, :] = np.exp(conditional4)
         binned_spectrum_posteriors4[counter, :] = binned_spectrum4
         full_spectrum_posteriors4[counter, :] = spectrum4
 
@@ -412,10 +539,10 @@ if not os.path.exists(out_name+'_full_posterior_spectrum4.npy'):
             ax3.plot(wavelengths3, binned_spectrum3, color = 'orangered', alpha = 0.05, zorder = 1)
             ax4.plot(wavelengths4, binned_spectrum4, color = 'orangered', alpha = 0.05, zorder = 1)
 
-            ax1.plot(wavelengths1, np.exp(conditional1.sample()) * binned_spectrum1, color = 'cornflowerblue', alpha = 0.05, zorder = 1) 
-            ax2.plot(wavelengths2, np.exp(conditional2.sample()) * binned_spectrum2, color = 'cornflowerblue', alpha = 0.05, zorder = 1)
-            ax3.plot(wavelengths3, np.exp(conditional3.sample()) * binned_spectrum3, color = 'cornflowerblue', alpha = 0.05, zorder = 1)
-            ax4.plot(wavelengths4, np.exp(conditional4.sample()) * binned_spectrum4, color = 'cornflowerblue', alpha = 0.05, zorder = 1)
+            ax1.plot(wavelengths1, np.exp(conditional1) * binned_spectrum1, color = 'cornflowerblue', alpha = 0.05, zorder = 1) 
+            ax2.plot(wavelengths2, np.exp(conditional2) * binned_spectrum2, color = 'cornflowerblue', alpha = 0.05, zorder = 1)
+            ax3.plot(wavelengths3, np.exp(conditional3) * binned_spectrum3, color = 'cornflowerblue', alpha = 0.05, zorder = 1)
+            ax4.plot(wavelengths4, np.exp(conditional4) * binned_spectrum4, color = 'cornflowerblue', alpha = 0.05, zorder = 1)
 
         counter += 1
 
