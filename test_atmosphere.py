@@ -26,7 +26,7 @@ atmosphere = utils.generate_atmosphere(star_properties, planet_properties, param
 
 # Generate spectra 10 times, average time it takes:
 timing = []
-for i in range(10):
+for i in range(100):
     tic = time.time()
     spectrum = atmosphere.get_spectrum()
     toc = time.time()
@@ -38,7 +38,7 @@ print('Gen spectrum at R = 10000', np.mean(timing), '+/-', np.sqrt(np.var(timing
 atmosphere1k = utils.generate_atmosphere(star_properties, planet_properties, param_species, bulk_species, R = 1000)
 
 timing = []
-for i in range(10):
+for i in range(100):
     tic = time.time()
     spectrum1k = atmosphere1k.get_spectrum()
     toc = time.time()
