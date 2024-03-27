@@ -26,7 +26,7 @@ import transitspectroscopy as ts
 import utils
 
 bulk = 'H2'
-element = 'H2O'
+element = 'CH4'
 kernel_name = 'georgeMatern32'
 show_plots = False
 multiprocessing = True
@@ -204,6 +204,10 @@ def loglike(theta):
     if element == 'H2O':
 
         log_X = np.log10( np.array([0.0, 0.0, 0.0, MR, 0.0, 0.0]) )
+
+    elif element == 'CH4':
+
+        log_X = np.log10( np.array([0.0, 0.0, MR, 0.0, 0.0, 0.0]) )
 
     else:
 
@@ -453,6 +457,11 @@ if __name__ == '__main__':
             #                               O2  CO2  CH4  H2O  O3   N2O
             if element == 'H2O':
                 log_X = np.log10( np.array([0.0, 0.0, 0.0,MR, 0.0, 0.0]) )
+
+            elif element == 'CH4':
+
+                log_X = np.log10( np.array([0.0, 0.0, MR, 0.0, 0.0, 0.0]) )
+
             else:
 
                 log_X = np.log10( np.array([0.0, MR, 0.0, 0.0, 0.0, 0.0]) )
