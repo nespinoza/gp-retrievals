@@ -26,15 +26,16 @@ def bin_to_data(w_data, w_model, d_model):
 
 class generate_atmosphere:
 
-    def set_parameters(self, T, log_X, cloud_parameters):
+    def set_parameters(self, T, log_X, cloud_parameters, chemistry_grid):
 
         self.T = T
         self.log_X = log_X
         self.cloud_parameters = cloud_parameters
+        self.chemistry_grid = chemistry_grid
 
         PT_params = np.array([T])
 
-        self.atmosphere = make_atmosphere(self.planet, self.model, self.P, self.P_ref, self.R_p_ref, PT_params, log_X,  cloud_params=cloud_parameters)
+        self.atmosphere = make_atmosphere(self.planet, self.model, self.P, self.P_ref, self.R_p_ref, PT_params, log_X, chemistry_grid=chemistry_grid, cloud_params=cloud_parameters)
 
     def get_spectrum(self):
 
@@ -114,8 +115,11 @@ class generate_atmosphere:
         
         if self.planet_type == 'terrestrial':
             self.opac = read_opacities(self.model, self.wl, opacity_treatment, T_fine, log_P_fine, opacity_database = 'Temperate')
+            self.chemistry_grid = None
+            
         if self.planet_type == 'giant':
             self.opac = read_opacities(self.model, self.wl, opacity_treatment, T_fine, log_P_fine)
+            self.chemistry_grid = load_chemistry_grid(self.param_species, grid = 'fastchem')
 
         # Set atmosphere --- first, set initial values:
         self.P = np.logspace(np.log10(P_max), np.log10(P_min), N_layers)
@@ -129,5 +133,7 @@ class generate_atmosphere:
         self.log_a, self.gamma, self.log_P_cloud = np.log10(a), -4., np.log10(Pcloud)
 
         cloud_params_init = [self.log_a, self.gamma, self.log_P_cloud]
+        
+        chemistry_grid_init = self.chemistry_grid
 
-        self.set_parameters(T_init, log_X_init, cloud_params_init)
+        self.set_parameters(T_init, log_X_init, cloud_params_init, chemistry_grid_init)
